@@ -904,7 +904,7 @@
         <div class="header">
             <div class="header-content">
                 <button class="history-btn" onclick="openHistory()">📋</button>
-<h1>🏪 FB Listing v4.0</h1>
+<h1>🏪 FB Listing v4.1</h1>
                 <button class="settings-btn" onclick="openSettings()">⚙️</button>
             </div>
         </div>
@@ -1536,7 +1536,7 @@ Be detailed and specific. Read any visible text on labels, packaging, or the pro
         }
         
         function extractBrand(text) {
-            const brands = ['Sony', 'Apple', 'Samsung', 'Microsoft', 'Nintendo', 'LG', 'Dell', 'HP', 'Lenovo', 'Nike', 'Adidas'];
+            const brands = ['Sony', 'Apple', 'Samsung', 'Microsoft', 'Nintendo', 'LG', 'Dell', 'HP', 'Lenovo', 'Nike', 'Adidas', 'Square', 'Canon', 'Nikon', 'Google', 'Asus', 'Acer'];
             for (const brand of brands) {
                 if (text.toLowerCase().includes(brand.toLowerCase())) {
                     return brand;
@@ -1546,16 +1546,30 @@ Be detailed and specific. Read any visible text on labels, packaging, or the pro
         }
         
         function extractModel(text) {
-            // Simple model extraction - look for common patterns
-            const modelMatch = text.match(/model[:\s]+([A-Z0-9\s-]+)/i);
-            if (modelMatch) return modelMatch[1].trim();
+            // Look for model with colon or label
+            const modelMatch = text.match(/(?:model|model\s*(?:no|number|#))[:\s]+([A-Z0-9\s-]+)/i);
+            if (modelMatch) {
+                const model = modelMatch[1].trim();
+                // Clean up - stop at newline or excessive text
+                return model.split('\n')[0].split(',')[0].trim();
+            }
             
+            // Look for model number patterns (S089, A1234, etc.)
+            const patternMatch = text.match(/\b([A-Z]\d{3,4}[A-Z]?)\b/);
+            if (patternMatch) return patternMatch[1];
+            
+            // Look for lines with "model" in them
             const lines = text.split('\n');
             for (const line of lines) {
-                if (line.toLowerCase().includes('model') || line.toLowerCase().includes('product')) {
-                    return line.replace(/model|product|:/gi, '').trim();
+                if (line.toLowerCase().includes('model')) {
+                    // Extract alphanumeric after "model"
+                    const extract = line.replace(/.*model[:\s]*/i, '').trim();
+                    if (extract && extract.length < 30) {
+                        return extract.split('\n')[0].split(',')[0].trim();
+                    }
                 }
             }
+            
             return '';
         }
         

@@ -904,7 +904,7 @@
         <div class="header">
             <div class="header-content">
                 <button class="history-btn" onclick="openHistory()">📋</button>
-<h1>🏪 FB Listing v4.1</h1>
+<h1>🏪 FB Listing v4.2</h1>
                 <button class="settings-btn" onclick="openSettings()">⚙️</button>
             </div>
         </div>
@@ -1471,23 +1471,21 @@ Be detailed and specific. Read any visible text on labels, packaging, or the pro
         }
         
         async function fetchEbayPricing(analysis, manualInfo, ebayAppId) {
-            // Extract product info for search - clean up the text
-            const brand = manualInfo.brand || extractBrand(analysis);
-            const model = manualInfo.model || extractModel(analysis);
-            let searchQuery = `${brand} ${model}`.trim();
+            // Build search query - prioritize manual input
+            let searchQuery = '';
             
-            // Clean up search query - remove line breaks and extra formatting
-            searchQuery = searchQuery.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim();
-            
-            if (!searchQuery) {
-                throw new Error('Could not determine product for pricing search');
+            // If user provided brand and model, use those
+            if (manualInfo.brand && manualInfo.model) {
+                searchQuery = `${manualInfo.brand} ${manualInfo.model}`.trim();
+            } 
+            // Otherwise send the full analysis to the function and let it extract
+            else {
+                searchQuery = null; // Signal that extraction is needed
             }
             
-            console.log('Searching eBay for:', searchQuery);
+            console.log('Calling eBay pricing function...');
             
-            // Call our Netlify function instead of eBay directly
-            // When deployed, this will be: https://your-site.netlify.app/.netlify/functions/ebay-pricing
-            // For local testing, update this URL once you have your Netlify URL
+            // Call our Netlify function
             const functionUrl = '/.netlify/functions/ebay-pricing';
             
             const response = await fetch(functionUrl, {
@@ -1497,16 +1495,25 @@ Be detailed and specific. Read any visible text on labels, packaging, or the pro
                 },
                 body: JSON.stringify({
                     searchQuery: searchQuery,
+                    analysisText: analysis, // Send full GPT analysis
+                    manualBrand: manualInfo.brand,
+                    manualModel: manualInfo.model,
                     ebayAppId: ebayAppId
                 })
             });
             
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || 'eBay API request failed');
+                throw new Error(errorData.message || `eBay API request failed (${response.status})`);
             }
             
             const data = await response.json();
+            
+            // Check if it's an error response from our function
+            if (data.error) {
+                throw new Error(data.message || data.error);
+            }
+            
             const items = data.findCompletedItemsResponse?.[0]?.searchResult?.[0]?.item || [];
             
             // Process items to include shipping
@@ -1529,7 +1536,7 @@ Be detailed and specific. Read any visible text on labels, packaging, or the pro
             console.log(`Found ${processedItems.length} eBay sold items`);
             
             return {
-                searchQuery: searchQuery,
+                searchQuery: data.searchQuery || searchQuery, // Use what the function actually searched for
                 items: processedItems,
                 count: processedItems.length
             };

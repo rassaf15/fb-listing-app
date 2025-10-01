@@ -8,14 +8,67 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const { searchQuery, ebayAppId } = JSON.parse(event.body);
+    const { searchQuery, analysisText, manualBrand, manualModel, ebayAppId } = JSON.parse(event.body);
     
-    if (!searchQuery || !ebayAppId) {
+    if (!ebayAppId) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ error: 'Missing required parameters' })
+        body: JSON.stringify({ error: 'Missing eBay App ID' })
       };
     }
+
+    let finalSearchQuery = searchQuery;
+
+    // If no search query provided, extract from analysis text
+    if (!finalSearchQuery && analysisText) {
+      // Extract brand - look for common patterns
+      let brand = manualBrand || '';
+      if (!brand) {
+        const brandMatch = analysisText.match(/(?:Brand|Manufacturer):\s*([^\n,]+)/i);
+        if (brandMatch) {
+          brand = brandMatch[1].trim();
+        } else {
+          // Check for common brands
+          const brands = ['Sony', 'Apple', 'Samsung', 'Microsoft', 'Nintendo', 'Square', 'HP', 'Dell', 'Lenovo', 'LG', 'Canon', 'Nikon', 'Google'];
+          for (const b of brands) {
+            if (analysisText.toLowerCase().includes(b.toLowerCase())) {
+              brand = b;
+              break;
+            }
+          }
+        }
+      }
+
+      // Extract model
+      let model = manualModel || '';
+      if (!model) {
+        // Look for model number patterns
+        const modelMatch = analysisText.match(/(?:Model|Model\s*(?:Number|No\.?|#)):\s*([^\n,]+)/i);
+        if (modelMatch) {
+          model = modelMatch[1].trim().split('\n')[0].split(',')[0];
+        } else {
+          // Look for alphanumeric patterns like S089, A1234, etc.
+          const patternMatch = analysisText.match(/\b([A-Z]\d{3,5}[A-Z]?)\b/);
+          if (patternMatch) {
+            model = patternMatch[1];
+          }
+        }
+      }
+
+      finalSearchQuery = `${brand} ${model}`.trim();
+      
+      if (!finalSearchQuery) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ 
+            error: 'Could not determine product from analysis',
+            message: 'Please provide brand and model manually in the form'
+          })
+        };
+      }
+    }
+
+    console.log('Searching eBay for:', finalSearchQuery);
 
     // Build eBay API URL
     const endpoint = 'https://svcs.ebay.com/services/search/FindingService/v1';
@@ -25,7 +78,7 @@ exports.handler = async (event, context) => {
       'SECURITY-APPNAME': ebayAppId,
       'RESPONSE-DATA-FORMAT': 'JSON',
       'REST-PAYLOAD': '',
-      'keywords': searchQuery,
+      'keywords': finalSearchQuery,
       'itemFilter(0).name': 'Condition',
       'itemFilter(0).value': 'Used',
       'itemFilter(1).name': 'SoldItemsOnly',
@@ -44,6 +97,9 @@ exports.handler = async (event, context) => {
     }
     
     const data = await response.json();
+
+    // Add the search query to the response so client knows what was searched
+    data.searchQuery = finalSearchQuery;
 
     // Return data with CORS headers for browser
     return {
